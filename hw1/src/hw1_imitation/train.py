@@ -150,8 +150,6 @@ def run_training(config: TrainConfig) -> None:
                 print(f"step={global_step} loss={loss_value:.6f}")
                 wandb.log({"train/loss": loss_value}, step=global_step)
                 logger.log({"train/loss": loss_value, "step": global_step})
-                logger.log()
-
 
     logger.dump_for_grading()
 
