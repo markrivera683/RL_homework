@@ -46,13 +46,20 @@ class MSEPolicy(BasePolicy):
         hidden_dims: tuple[int, ...] = (128, 128),
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
+        self.net = nn.MLP(
+            input_size=state_dim,
+            output_size=chunk_size * action_dim,
+            hidden_sizes=hidden_dims,
+            activation=nn.ReLU
+        )
 
     def compute_loss(
         self,
         state: torch.Tensor,
         action_chunk: torch.Tensor,
     ) -> torch.Tensor:
-        raise NotImplementedError
+        pred = self.net(state).reshape(-1, self.chunk_size, self.action_dim)
+        return nn.functional.mse_loss(pred, action_chunk)
 
     def sample_actions(
         self,
@@ -60,7 +67,8 @@ class MSEPolicy(BasePolicy):
         *,
         num_steps: int = 10,
     ) -> torch.Tensor:
-        raise NotImplementedError
+        with torch.no_grad():
+            return self.net(state).reshape(-1, self.chunk_size, self.action_dim)
 
 
 class FlowMatchingPolicy(BasePolicy):
@@ -75,13 +83,20 @@ class FlowMatchingPolicy(BasePolicy):
         hidden_dims: tuple[int, ...] = (128, 128),
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
+        self.net = nn.MLP(
+            input_size = state_dim,
+            output_size = action_dim,
+            hidden_sizes = hidden_dims,
+            activation = nn.ReLU
+        )
 
     def compute_loss(
         self,
         state: torch.Tensor,
         action_chunk: torch.Tensor,
     ) -> torch.Tensor:
-        raise NotImplementedError
+        pred = self.net(state).reshape(-1, self.chunk_size, self.action_dim)
+        return nn.functional.
 
     def sample_actions(
         self,

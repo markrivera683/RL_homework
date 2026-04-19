@@ -128,6 +128,30 @@ def run_training(config: TrainConfig) -> None:
     logger = Logger(log_dir)
 
     ### TODO: PUT YOUR MAIN TRAINING LOOP HERE ###
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+
+    global_step = 0
+    model.train()
+
+    for epoch in range(config.num_epochs):
+        for state, action_chunk in loader:
+            state = state.to(device)
+            action_chunk = action.to(device)
+
+            optimizer.zero_grad()
+            loss = model.compute_loss(state, action_chunk)
+            loss.backward()
+            optimizer.step()
+
+            global_step += 1
+
+            if global_step % config.log_interval == 0:
+                loss_value = loss.item()
+                print(f"step={global_step} loss={loss_value:.6f}")
+                wandb.log({"train/loss": loss_value}, step=global_step)
+                logger.log({"train/loss": loss_value, "step": global_step})
+                logger.log()
+
 
     logger.dump_for_grading()
 
