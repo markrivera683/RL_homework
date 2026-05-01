@@ -46,7 +46,7 @@ class MSEPolicy(BasePolicy):
         hidden_dims: tuple[int, ...] = (128, 128),
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
-        self.net = nn.MLP(
+        self.net = MLP(
             input_size=state_dim,
             output_size=chunk_size * action_dim,
             hidden_sizes=hidden_dims,
@@ -58,7 +58,7 @@ class MSEPolicy(BasePolicy):
         state: torch.Tensor,
         action_chunk: torch.Tensor,
     ) -> torch.Tensor:
-        pred = self.net(state).reshape(-1, self.chunk_size, self.action_dim)
+        pred = self.net(state.view(state.shape[0], -1)).reshape(-1, self.chunk_size, self.action_dim)
         return nn.functional.mse_loss(pred, action_chunk)
 
     def sample_actions(
@@ -83,9 +83,9 @@ class FlowMatchingPolicy(BasePolicy):
         hidden_dims: tuple[int, ...] = (128, 128),
     ) -> None:
         super().__init__(state_dim, action_dim, chunk_size)
-        self.net = nn.MLP(
+        self.net = MLP(
             input_size = state_dim,
-            output_size = action_dim,
+            output_size = action_dim * chunk_size,
             hidden_sizes = hidden_dims,
             activation = nn.ReLU
         )
@@ -95,8 +95,13 @@ class FlowMatchingPolicy(BasePolicy):
         state: torch.Tensor,
         action_chunk: torch.Tensor,
     ) -> torch.Tensor:
-        pred = self.net(state).reshape(-1, self.chunk_size, self.action_dim)
-        return nn.functional.
+        x0 = torch.randn_like(action_chunk)
+        x1 = action_chunk
+        t = torch.rand(state.shape[0], 1, 1)
+        xt = [x0, x1] @ [1-t, t]
+        v_target = action_chunk.view([state.shape[0], -1])
+        v_pred = self(xt.view([state.shape[0], -1]))
+        return nn.functional.mse_loss(v_pred, v_target)
 
     def sample_actions(
         self,
@@ -104,11 +109,40 @@ class FlowMatchingPolicy(BasePolicy):
         *,
         num_steps: int = 10,
     ) -> torch.Tensor:
-        raise NotImplementedError
+        x = torch.randn_like(state)
+        dt = 1 / num_steps
+        with torch.no_grad():
+            for i in range(num_steps):
+                t = dt * (i + 1)
+                v = self(x.view(1,-1)).squeeze().reshape([self.chunk_size, self.action_dim])
+                x += v * dt
+            return x.reshape(-1, self.chunk_size, self.action_dim)
 
 
 PolicyType: TypeAlias = Literal["mse", "flow"]
 
+
+class MLP(nn.Module):
+    def __init__(self, 
+                input_size: int,
+                output_size: int, 
+                hidden_sizes: tuple[int, ...] = (128, 128),
+                activation: type[nn.Module] = nn.ReLU
+    ) -> None:
+        super().__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.hidden_sizes = hidden_sizes
+        self.activation = activation
+        self.layers = nn.ModuleList()
+        for i in range(len(hidden_sizes)):
+            self.layers.append(nn.LazyLinear(hidden_sizes[i]))
+            self.layers.append(activation())
+        self.layers.append(nn.LazyLinear(output_size))
+        self.net = nn.Sequential(*self.layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
 
 def build_policy(
     policy_type: PolicyType,

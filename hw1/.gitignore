@@ -10,6 +10,7 @@ wandb/
 
 # Data artifacts
 /data/
+data/
 checkpoints/
 videos/
 *.zip

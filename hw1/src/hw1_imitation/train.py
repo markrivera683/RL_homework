@@ -11,6 +11,7 @@ import numpy as np
 import torch
 import tyro
 import wandb
+import time
 from torch.utils.data import DataLoader
 
 from hw1_imitation.data import (
@@ -128,29 +129,45 @@ def run_training(config: TrainConfig) -> None:
     logger = Logger(log_dir)
 
     ### TODO: PUT YOUR MAIN TRAINING LOOP HERE ###
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
+    model = torch.compile(model)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
-    global_step = 0
+    from hw1_imitation.evaluation import evaluate_policy
+
     model.train()
+    steps: int = 0
+    start_time = time.time()
 
     for epoch in range(config.num_epochs):
-        for state, action_chunk in loader:
-            state = state.to(device)
-            action_chunk = action.to(device)
-
+        for state, action in loader:
             optimizer.zero_grad()
-            loss = model.compute_loss(state, action_chunk)
+            state, action = state.to(device), action.to(device)
+            loss = model.compute_loss(state, action)
             loss.backward()
             optimizer.step()
 
-            global_step += 1
-
-            if global_step % config.log_interval == 0:
-                loss_value = loss.item()
-                print(f"step={global_step} loss={loss_value:.6f}")
-                wandb.log({"train/loss": loss_value}, step=global_step)
-                logger.log({"train/loss": loss_value, "step": global_step})
-
+            steps += 1
+            if steps % config.eval_interval == 0:
+                evaluate_policy(model, normalizer, device, 
+                            config.chunk_size, config.video_size,
+                            config.num_video_episodes, config.flow_num_steps,
+                            steps, logger)
+            if steps % config.log_interval == 0:
+                start_time = time.time()
+                wandb.log({
+                    "loss": loss.item(),
+                    "epoch": epoch,
+                    "lr": optimizer.param_groups[0]["lr"],
+                    "time": time.time() - start_time,
+                    "step": steps
+                }, step=steps)
+                logger.log({
+                    "loss": loss.item(),
+                    "epoch": epoch,
+                    "lr": optimizer.param_groups[0]["lr"],
+                    "time": time.time() - start_time,
+                    "step": steps
+                }, step=steps)
     logger.dump_for_grading()
 
 
